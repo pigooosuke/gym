@@ -84,6 +84,12 @@ class ReversiEnv(gym.Env):
     def _reset(self):
         self.state = np.zeros((3, self.board_size, self.board_size))
         self.state[2, :, :] = 1.0
+        # オセロ初期配置
+        self.state[2, 3:5, 3:5] = 0
+        self.state[0, 4, 3] = 1
+        self.state[0, 3, 4] = 1
+        self.state[1, 3, 3] = 1
+        self.state[1, 4, 4] = 1
         self.to_play = ReversiEnv.BLACK
         self.done = False
 
@@ -104,7 +110,7 @@ class ReversiEnv(gym.Env):
         #     pass
         if ReversiEnv.resign_place(self.board_size, action):
             return self.state, -1, True, {'state': self.state}
-        elif not ReversiEnv.valid_place(self.state, action):
+        elif not ReversiEnv.valid_place(self.state, action, self.player_color):
             if self.illegal_place_mode == 'raise':
                 raise
             elif self.illegal_place_mode == 'lose':
@@ -181,20 +187,85 @@ class ReversiEnv(gym.Env):
         return action == board_size ** 2
 
     @staticmethod
-    def valid_place(board, action):
+    def valid_place(board, action, player_color):
         coords = ReversiEnv.action_to_coordinate(board, action)
-        #### TO DO オセロ独自の有効手を記述
-        # ひっくり返せない
+        # まだ石が置いていない
         if board[2, coords[0], coords[1]] == 1:
-            return True
+            # ひっくり返せる石がある
+            if valid_reverse_opponent(board, coords, player_color):
+                return True
+            else:
+                return False
         else:
             return False
 
     @staticmethod
+    def valid_reverse_opponent(board, coords, player_color):
+        '''
+        石をひっくり返せるか確認
+        '''
+        opponent_color = 1 - player_color
+        pos_x = coords[0]
+        pos_y = coords[1]
+        for dx in [-1, 0, 1]:
+            for dy in [-1, 0, 1]:
+                if(dx == 0 and dy == 0):
+                    continue
+                nx = pos_x + dx
+                ny = pos_y + dy
+                n = 0
+                # 相手の石がある
+                while(board[opponent_color, nx, ny] == 1):
+                    n += 1
+                    nx += dx
+                    ny += dy
+                # 自分の石がある
+                if(n > 0 and board[player_color, nx, ny] == 1):
+                    return True
+        return False
+
+
+    @staticmethod
     def make_place(board, action, player):
+        # 石を置く処理
         coords = ReversiEnv.action_to_coordinate(board, action)
-        board[2, coords[0], coords[1]] = 0
-        board[player, coords[0], coords[1]] = 1
+
+        d = board.shape[-1]
+        opponent_color = 1 - player_color
+        pos_x = coords[0]
+        pos_y = coords[1]
+
+        for dx in [-1, 0, 1]:
+            for dy in [-1, 0, 1]:
+                if(dx == 0 and dy == 0):
+                    continue
+                nx = pos_x + dx
+                ny = pos_y + dy
+                n = 0
+                if !(nx in range(d) and ny in range(d)):
+                    continue
+                # 相手の石がある
+                while(board[opponent_color, nx, ny] == 1):
+                    tmp_nx = nx + dx
+                    tmp_ny = ny + dy
+                    if !(tmp_nx in range(d) and tmp_ny in range(d)):
+                        continue
+                    n += 1
+                    nx += dx
+                    ny += dy
+                # 自分の石がある
+                if(n > 0 and board[player_color, nx, ny] == 1):
+                    nx = pos_x + dx
+                    ny = pos_y + dy
+                    # 相手の石がある限り、ループ
+                    while(board[opponent_color, nx, ny] == 1):
+                        board[2, nx, ny] = 0
+                        board[player, nx, ny] = 1
+                        board[opponent_color, nx, ny] = 0
+                        nx += dx
+                        ny += dy
+        return board
+
 
     @staticmethod
     def coordinate_to_action(board, coords):
@@ -203,7 +274,7 @@ class ReversiEnv(gym.Env):
 
     @staticmethod
     def action_to_coordinate(board, action):
-        # 行列を表し、網羅的に走査する
+        # 座標に変換する
         return action // board.shape[-1], action % board.shape[-1]
 
     @staticmethod
@@ -216,6 +287,7 @@ class ReversiEnv(gym.Env):
     def game_finished(board):
         # Returns 1 if player 1 wins, -1 if player 2 wins and 0 otherwise
         ##### TO DO オセロの勝敗条件を記述
+        
         # すべての石が一色になった。
         # 石の数が多いほうの勝ち
         return 0
